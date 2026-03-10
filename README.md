@@ -26,10 +26,11 @@ The development environment for this project is slightly more involved than a ge
 1. Install the Arduino IDE
 1. Add ESP32 board manager URL: `https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json`
 1. Install "esp32 by Espressif Systems" from the Arduino Boards Manager.
-1. (Planned in the future. Not currently needed) Install ESP32 filesystem upload plugin for Arduino IDE (SPIFFS = SPI-Flash File System): https://github.com/me-no-dev/arduino-esp32fs-plugin
+1. Install ESP32 filesystem upload plugin for Arduino IDE (LittleFS): https://github.com/earlephilhower/arduino-littlefs-upload
 1. Install the following libraries via the Arduino Library Manager: 
     - WiFiManager (by tablatronix https://github.com/tzapu/WiFiManager) 
     - SpeedyStepper (by S.Reifel https://github.com/Stan-Reifel/SpeedyStepper)
+    - LittleFS (by lorol https://github.com/lorol/LITTLEFS)
 
         Note: The version of SpeedyStepper available in the Arduino Library Manager contains a typo in an import header that stops it from working on Linux. Download directly from the [GitHub repository](https://github.com/Stan-Reifel/SpeedyStepper.git) to fix this error.
 1. Select "Tools->Board->ESP32 Arduino->ESP32 Dev Module"

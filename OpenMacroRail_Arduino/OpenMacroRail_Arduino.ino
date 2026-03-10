@@ -6,6 +6,16 @@
 #include <SpeedyStepper.h> // https://github.com/Stan-Reifel/SpeedyStepper.git Linux users: this library has an import with incorrect casing that will fail on Linux. Downloading from the repository rather than throguh Arduino Library Manager will fix the problem.
 #include <WiFiManager.h>   //https://github.com/tzapu/WiFiManager
 
+#define USE_LittleFS
+
+#include <FS.h>
+#ifdef USE_LittleFS
+  #define SPIFFS LITTLEFS
+  #include <LITTLEFS.h> 
+#else
+  #include <SPIFFS.h>
+#endif 
+
 // Unused pin declarations (these pins are present on Motorized Macro Slider PCB V1.2):
 // const int LIMIT1_PIN = 12;
 // const int LIMIT2_PIN = 13;
@@ -268,12 +278,10 @@ void setup(void){
   digitalWrite(STEP_MS2_PIN, LOW); // Note: Modifying MS1 or MS2 will change UART address of TMC
   
   //Init high power LED
-  ledcSetup(LED_CHANNEL,5000,8);  
-  ledcAttachPin(LED_PWM_PIN, LED_CHANNEL);
+  ledcAttach(LED_PWM_PIN,5000,8);  
   if(ledState){
     ledcWrite(LED_CHANNEL, ledBrightness);
   }else{
-    
     ledcWrite(LED_CHANNEL, 0);
   }
   
@@ -312,7 +320,7 @@ void setup(void){
   server.on("/", handleRoot);
   server.on("/cssbotstrap.css", handleCssbotstrap);
   server.on("/jsbootstrap.js", handleJsbootstrap);
-  server.on("/jsjquery.js", handleJsajax);
+  server.on("/jsjquery.js", handleJsjquery);
   
 
   server.on("/jogFwd", [](){
