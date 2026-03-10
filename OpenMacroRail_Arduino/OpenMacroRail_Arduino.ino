@@ -99,9 +99,32 @@ const char *webpage =
 #include "webpage.h"
 ;
 
-void handleRoot() {
+const char *cssbootstrap = 
+#include "bootstrap.min.css.h"
+;
 
+const char *jsbootstrap = 
+#include "bootstrap.min.js.h"
+;
+
+const char *jsjquery = 
+#include "jquery.min.js.h"
+;
+
+void handleRoot() {
   server.send(200, "text/html", webpage);
+}
+
+void handleCssbotstrap() {
+  server.send(200, "text/html", cssbootstrap);
+}
+
+void handleJsbootstrap() {
+  server.send(200, "text/html", jsbootstrap);
+}
+
+void handleJsjquery() {
+  server.send(200, "text/html", jsjquery);
 }
 
 void handleNotFound(){
@@ -287,6 +310,10 @@ void setup(void){
   updateStepperSettings();
 
   server.on("/", handleRoot);
+  server.on("/cssbotstrap.css", handleCssbotstrap);
+  server.on("/jsbootstrap.js", handleJsbootstrap);
+  server.on("/jsjquery.js", handleJsajax);
+  
 
   server.on("/jogFwd", [](){
     Serial.println("jogFwd");
