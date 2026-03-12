@@ -1,6 +1,7 @@
+#include <ESPAsyncWebServer.h>
+#include <AsyncTCP.h>
 #include <WiFiClient.h>
 #include <WiFi.h>
-#include <WebServer.h>
 #include <ESPmDNS.h>
 #include <Preferences.h>
 #include <SpeedyStepper.h> // https://github.com/Stan-Reifel/SpeedyStepper.git Linux users: this library has an import with incorrect casing that will fail on Linux. Downloading from the repository rather than throguh Arduino Library Manager will fix the problem.
@@ -15,6 +16,8 @@
 #else
   #include <SPIFFS.h>
 #endif 
+
+#define FORMAT_LITTLEFS_IF_FAILED true
 
 // Unused pin declarations (these pins are present on Motorized Macro Slider PCB V1.2):
 // const int LIMIT1_PIN = 12;
@@ -103,53 +106,52 @@ SESSION_STATE current_session_state = NEXT_IMAGE;
 long time_prev_session_state_change = millis();
 long timeout_period = deshakeDelay; //This variable adapts to current_session_state, so it's not constant!
 
-WebServer server(80);
+AsyncWebServer server(80);
 
 const char *webpage = 
 #include "webpage.h"
 ;
 
-const char *cssbootstrap = 
-#include "bootstrap.min.css.h"
-;
+void listDir(fs::FS &fs, const char * dirname, uint8_t levels){
+    Serial.printf("Listing directory: %s\n", dirname);
 
-const char *jsbootstrap = 
-#include "bootstrap.min.js.h"
-;
+    File root = fs.open(dirname);
+    if(!root){
+        Serial.println("Failed to open directory");
+        return;
+    }
+    if(!root.isDirectory()){
+        Serial.println("Not a directory");
+        return;
+    }
 
-const char *jsjquery = 
-#include "jquery.min.js.h"
-;
-
-void handleRoot() {
-  server.send(200, "text/html", webpage);
+    File file = root.openNextFile();
+    while(file){
+        if(file.isDirectory()){
+            Serial.print("  DIR : ");
+            Serial.print (file.name());
+            time_t t= file.getLastWrite();
+            struct tm * tmstruct = localtime(&t);
+            Serial.printf("  LAST WRITE: %d-%02d-%02d %02d:%02d:%02d\n",(tmstruct->tm_year)+1900,( tmstruct->tm_mon)+1, tmstruct->tm_mday,tmstruct->tm_hour , tmstruct->tm_min, tmstruct->tm_sec);
+            if(levels){
+                listDir(fs, file.name(), levels -1);
+            }
+        } else {
+            Serial.print("  FILE: ");
+            Serial.print(file.name());
+            Serial.print("  SIZE: ");
+            Serial.print(file.size());
+            time_t t= file.getLastWrite();
+            struct tm * tmstruct = localtime(&t);
+            Serial.printf("  LAST WRITE: %d-%02d-%02d %02d:%02d:%02d\n",(tmstruct->tm_year)+1900,( tmstruct->tm_mon)+1, tmstruct->tm_mday,tmstruct->tm_hour , tmstruct->tm_min, tmstruct->tm_sec);
+        }
+        file = root.openNextFile();
+    }
 }
 
-void handleCssbotstrap() {
-  server.send(200, "text/html", cssbootstrap);
-}
-
-void handleJsbootstrap() {
-  server.send(200, "text/html", jsbootstrap);
-}
-
-void handleJsjquery() {
-  server.send(200, "text/html", jsjquery);
-}
-
-void handleNotFound(){
-  String message = "File Not Found\n\n";
-  message += "URI: ";
-  message += server.uri();
-  message += "\nMethod: ";
-  message += (server.method() == HTTP_GET)?"GET":"POST";
-  message += "\nArguments: ";
-  message += server.args();
-  message += "\n";
-  for (uint8_t i=0; i<server.args(); i++){
-    message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
-  }
-  server.send(404, "text/plain", message);
+void onRequest(AsyncWebServerRequest *request){
+  //Handle Unknown Request
+  request->send(404);
 }
 
 void jog_fwd(){
@@ -288,6 +290,14 @@ void setup(void){
   Serial.begin(115200);
   Serial.println("");
 
+  if(!SPIFFS.begin(FORMAT_LITTLEFS_IF_FAILED)){
+        Serial.println("LITTLEFS Mount Failed");
+        return;
+    }
+
+    Serial.println("----list 1----");
+    listDir(SPIFFS, "/", 1);
+
   preferences.begin("settings",false);
   readSettingsFromEEPROM();
 
@@ -317,64 +327,75 @@ void setup(void){
   stepper.connectToPins(MOTOR_STEP_PIN, MOTOR_DIRECTION_PIN);
   updateStepperSettings();
 
-  server.on("/", handleRoot);
-  server.on("/cssbotstrap.css", handleCssbotstrap);
-  server.on("/jsbootstrap.js", handleJsbootstrap);
-  server.on("/jsjquery.js", handleJsjquery);
+  server.on("/", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(200, "text/html", webpage);
+  });
+  
+  server.on("/style.css", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(LITTLEFS, "/bootstrap.min.css", "text/css");
+  });
+
+  server.on("/style.css", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(LITTLEFS, "/bootstrap.min.js", "text/js");
+  });
+
+  server.on("/style.css", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(LITTLEFS, "/jquery.min.js", "text/js");
+  });
   
 
-  server.on("/jogFwd", [](){
+  server.on("/jogFwd", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     Serial.println("jogFwd");
     JOGFWDFLAG = true;
-    server.send(200, "text/plain", "jogFwd");
+    request->send(200, "text/plain", "jogFwd");
   });
 
-  server.on("/jogBwd", [](){
+  server.on("/jogBwd", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     Serial.println("jogBwd");
     JOGBWDFLAG = true;
-    server.send(200, "text/plain", "jogBwd");
+    request->send(200, "text/plain", "jogBwd");
   });
 
-  server.on("/jogIncrSlow", [](){
+  server.on("/jogIncrSlow", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     Serial.println("jogIncrSlow");
     jogIncrement = 0.1;
     updateStepperSettings();
-    server.send(200, "text/plain", "jogIncrSlow");
+    request->send(200, "text/plain", "jogIncrSlow");
   });
 
-  server.on("/jogIncrMedium", [](){
+  server.on("/jogIncrMedium", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     Serial.println("jogIncrMedium");
     jogIncrement = 0.5;
     updateStepperSettings();
-    server.send(200, "text/plain", "jogIncrMedium");
+    request->send(200, "text/plain", "jogIncrMedium");
   });
 
-  server.on("/jogIncrFast", [](){
+  server.on("/jogIncrFast", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     Serial.println("jogIncrFast");
     jogIncrement = 1.0;
     updateStepperSettings();
-    server.send(200, "text/plain", "jogIncrFast");
+    request->send(200, "text/plain", "jogIncrFast");
   });
 
-  server.on("/setStartPoint", [](){
+  server.on("/setStartPoint", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     Serial.println("setStartPoint");
     setStartPoint();
-    server.send(200, "text/plain", "setStartPoint");
+    request->send(200, "text/plain", "setStartPoint");
   });
 
-  server.on("/setEndPoint", [](){
+  server.on("/setEndPoint", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     Serial.println("setEndPoint");
     setEndPoint();
-    server.send(200, "text/plain", "setEndPoint");
+    request->send(200, "text/plain", "setEndPoint");
   });
 
-  server.on("/testImage", [](){
+  server.on("/testImage", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     Serial.println("testImage");
     toggleCameraTrigger();
-    server.send(200, "text/plain", "testImage");
+    request->send(200, "text/plain", "testImage");
   });
   
-  server.on("/start", [](){
+  server.on("/start", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     Serial.println("start");
     goToStartPoint();
     current_operating_state = PHOTO_SESSION;
@@ -382,33 +403,33 @@ void setup(void){
     time_prev_session_state_change = millis();
     picsTaken = 0;
     updateStepperSettings();
-    server.send(200, "text/plain", "start");
+    request->send(200, "text/plain", "start");
   });
 
-  server.on("/abort", [](){
+  server.on("/abort", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     Serial.println("abort");
     current_operating_state=JOGGING;
     picsTaken = 0;
     updateStepperSettings();
-    server.send(200, "text/plain", "abort");
+    request->send(200, "text/plain", "abort");
   });
 
-  server.on("/numImagesForm", [](){
+  server.on("/numImagesForm", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     Serial.println("numImagesForm");
-    if(server.hasArg("num")){
-      numImages = server.arg("num").toInt();
+    if(request->hasArg("num")){
+      numImages = request->arg("num").toInt();
       calculateStats();
     }
-    server.send(200, "text/plain", String(numImages));
+    request->send(200, "text/plain", String(numImages));
   });
 
-  server.on("/ledSwitch", [](){
+  server.on("/ledSwitch", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     Serial.println("ledSwitch");
-    if(server.hasArg("state")){
-      ledState = server.arg("state") == "true";
+    if(request->hasArg("state")){
+      ledState = request->arg("state") == "true";
     }
-    if(server.hasArg("brightnessPercent")){
-      ledBrightness = (server.arg("brightnessPercent").toFloat() / 100) * MAX_LED_BRIGHTNESS;
+    if(request->hasArg("brightnessPercent")){
+      ledBrightness = (request->arg("brightnessPercent").toFloat() / 100) * MAX_LED_BRIGHTNESS;
       preferences.putInt("ledBrightness",ledBrightness);
     }
     calculateStats();
@@ -417,77 +438,76 @@ void setup(void){
     }else{
       ledcWrite(LED_CHANNEL,0);
     }
-    server.send(200, "text/plain", "ledSwitch: "+String(ledState)+", brightness: "+String(ledBrightness));
+    request->send(200, "text/plain", "ledSwitch: "+String(ledState)+", brightness: "+String(ledBrightness));
   });
 
-  server.on("/shootingSpeedForm", [](){
+  server.on("/shootingSpeedForm", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     Serial.println("shootingSpeedForm");
-    if(server.hasArg("num")){
-      shootingSpeed = server.arg("num").toFloat();
+    if(request->hasArg("num")){
+      shootingSpeed = request->arg("num").toFloat();
       updateStepperSettings();
       preferences.putFloat("shootingSpeed",shootingSpeed);
     }
-    server.send(200, "text/plain", String(shootingSpeed));
+    request->send(200, "text/plain", String(shootingSpeed));
   });
 
-  server.on("/jogSpeedForm", [](){
+  server.on("/jogSpeedForm", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     Serial.println("jogSpeedForm");
-    if(server.hasArg("num")){
-      jogSpeed = server.arg("num").toFloat();
+    if(request->hasArg("num")){
+      jogSpeed = request->arg("num").toFloat();
       updateStepperSettings();
       preferences.putFloat("jogSpeed",jogSpeed);
     }
-    server.send(200, "text/plain", String(jogSpeed));
+    request->send(200, "text/plain", String(jogSpeed));
   });
 
-  server.on("/deshakeDelayForm", [](){
+  server.on("/deshakeDelayForm", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     Serial.println("deshakeDelayForm");
-    if(server.hasArg("num")){
-      deshakeDelay = server.arg("num").toFloat();
+    if(request->hasArg("num")){
+      deshakeDelay = request->arg("num").toFloat();
       calculateStats();
       preferences.putFloat("deshakeDelay",deshakeDelay);
     }
-    server.send(200, "text/plain", String(deshakeDelay));
+    request->send(200, "text/plain", String(deshakeDelay));
   });
 
-  server.on("/shootDelayForm", [](){
+  server.on("/shootDelayForm", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     Serial.println("shootDelayForm");
-    if(server.hasArg("num")){
-      shutterDelay = server.arg("num").toFloat();
+    if(request->hasArg("num")){
+      shutterDelay = request->arg("num").toFloat();
       calculateStats();
       preferences.putFloat("shootDelay",shutterDelay);
     }
-    server.send(200, "text/plain", String(shutterDelay));
+    request->send(200, "text/plain", String(shutterDelay));
   });
 
-  server.on("/overshootDistanceForm", [](){
+  server.on("/overshootDistanceForm", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     Serial.println("overshootDistanceForm");
-    if(server.hasArg("num")){
-      overshootDistance = server.arg("num").toFloat();
+    if(request->hasArg("num")){
+      overshootDistance = request->arg("num").toFloat();
       calculateStats();
       preferences.putFloat("overshootDist",overshootDistance);
     }
-    server.send(200, "text/plain", String(overshootDistance));
+    request->send(200, "text/plain", String(overshootDistance));
   });
   
-  server.on("/refreshStats", [](){
+  server.on("/refreshStats", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     calculateStats();
     String response = "startPoint:"+String(startPoint,3)+","+"endPoint:"+String(endPoint,3)+","+"currentPos:"+String(currentPos,3)+","+"distance:"+String(distance)+","+"increment:"+String(increment,4)+","+"remainingPictures:"+String(remainingPictures)+","+"remainingShootingTime:"+String(remainingShootingTime)+","+"totalShootingTime:"+String(totalShootingTime)+",";
-    server.send(200, "text/plain", response);
+    request->send(200, "text/plain", response);
   });
   
-  server.on("/refreshForms", [](){
+  server.on("/refreshForms", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     String response = "jogIncrement:"+String(jogIncrement,1)+","+"numImages:"+String(numImages)+","+"shootingSpeed:"+String(shootingSpeed,1)+","+"jogSpeed:"+String(jogSpeed,1)+","+"deshakeDelay:"+String(deshakeDelay,1)+","+"shootDelay:"+String(shutterDelay,1)+","+"overshootDistance:"+String(overshootDistance,1)+","+"ledState:"+String(ledState)+","+"ledBrightness:"+String((uint)(((float)ledBrightness/(float)MAX_LED_BRIGHTNESS)*100))+",";
-    server.send(200, "text/plain", response);
+    request->send(200, "text/plain", response);
   });
-  server.onNotFound(handleNotFound);
+  server.onNotFound(onRequest);
 
   server.begin();
   Serial.println("HTTP Server Started");
 }
 
 void loop(void){
-  server.handleClient();
   long time_now = millis();
 
   if(current_operating_state==PHOTO_SESSION){

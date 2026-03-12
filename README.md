@@ -31,6 +31,8 @@ The development environment for this project is slightly more involved than a ge
     - WiFiManager (by tablatronix https://github.com/tzapu/WiFiManager) 
     - SpeedyStepper (by S.Reifel https://github.com/Stan-Reifel/SpeedyStepper)
     - LittleFS (by lorol https://github.com/lorol/LITTLEFS)
+	- ESPAsyncWebServer by ESP32Async
+	- AsyncTCP by ESP32Async
 
         Note: The version of SpeedyStepper available in the Arduino Library Manager contains a typo in an import header that stops it from working on Linux. Download directly from the [GitHub repository](https://github.com/Stan-Reifel/SpeedyStepper.git) to fix this error.
 1. Select "Tools->Board->ESP32 Arduino->ESP32 Dev Module"
